@@ -1,0 +1,6 @@
+{
+  "name": "Guess That!",
+  "description": "An editorial pop-culture deduction game for songs, movies, and celebrities featuring real-time Spotify audio previews, progressive pinpoint hints, badge rewards, and live multiplayer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,210 @@
+{
+  "entities": {
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Publicly visible player high score, badge count, and reward progression without PII.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the player.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Public display handle of the player.",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "editorialTitle": {
+          "type": "string",
+          "description": "Equipped reward title displayed on the leaderboard.",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "score": {
+          "type": "integer",
+          "description": "Cumulative high score across deduction categories."
+        },
+        "streak": {
+          "type": "integer",
+          "description": "Highest consecutive correct guess streak."
+        },
+        "badgesCount": {
+          "type": "integer",
+          "description": "Number of unlocked editorial badges."
+        },
+        "tokens": {
+          "type": "integer",
+          "description": "Current vinyl reward token balance."
+        },
+        "unlockedBadges": {
+          "type": "array",
+          "description": "Bounded list of unlocked badge IDs (max 20).",
+          "maxLength": 20
+        },
+        "unlockedRewards": {
+          "type": "array",
+          "description": "Bounded list of unlocked vault reward IDs (max 20).",
+          "maxLength": 20
+        },
+        "visibility": {
+          "type": "string",
+          "description": "Visibility scope for query enforcement.",
+          "enum": ["public"],
+          "minLength": 6,
+          "maxLength": 6
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was first created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the score was last updated."
+        }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "editorialTitle",
+        "score",
+        "streak",
+        "badgesCount",
+        "tokens",
+        "unlockedBadges",
+        "unlockedRewards",
+        "visibility",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "MultiplayerRoom": {
+      "title": "MultiplayerRoom",
+      "description": "Live head-to-head deduction duel room synchronized across connected players.",
+      "type": "object",
+      "properties": {
+        "roomId": {
+          "type": "string",
+          "description": "Unique room identifier matching the document ID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "roomCode": {
+          "type": "string",
+          "description": "Short join code for friends.",
+          "minLength": 4,
+          "maxLength": 12,
+          "pattern": "^[A-Z0-9\\-]+$"
+        },
+        "hostId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the room host.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "hostName": {
+          "type": "string",
+          "description": "Display handle of the room host.",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "hostScore": {
+          "type": "integer",
+          "description": "Current match score for the host."
+        },
+        "guestId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the challenger (or 'NONE' while waiting).",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "guestName": {
+          "type": "string",
+          "description": "Display handle of the challenger.",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "guestScore": {
+          "type": "integer",
+          "description": "Current match score for the challenger."
+        },
+        "category": {
+          "type": "string",
+          "description": "Selected deduction category for the room.",
+          "enum": ["songs", "movies", "celebrities"],
+          "minLength": 5,
+          "maxLength": 15
+        },
+        "roundIndex": {
+          "type": "integer",
+          "description": "Active challenge round index (0 to 4)."
+        },
+        "status": {
+          "type": "string",
+          "description": "Match lifecycle status.",
+          "enum": ["waiting", "active", "completed"],
+          "minLength": 6,
+          "maxLength": 12
+        },
+        "visibility": {
+          "type": "string",
+          "description": "Visibility scope for lobby discovery.",
+          "enum": ["public"],
+          "minLength": 6,
+          "maxLength": 6
+        },
+        "lastEvent": {
+          "type": "string",
+          "description": "Summary of the latest round action.",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the room was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest room mutation."
+        }
+      },
+      "required": [
+        "roomId",
+        "roomCode",
+        "hostId",
+        "hostName",
+        "hostScore",
+        "guestId",
+        "guestName",
+        "guestScore",
+        "category",
+        "roundIndex",
+        "status",
+        "visibility",
+        "lastEvent",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/leaderboard/{userId}": {
+      "schema": "LeaderboardEntry",
+      "description": "Global leaderboard records keyed by the player's Firebase Auth UID."
+    },
+    "/rooms/{roomId}": {
+      "schema": "MultiplayerRoom",
+      "description": "Live head-to-head multiplayer duel rooms."
+    }
+  }
+}

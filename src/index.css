@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: 'Swiza';
+  src: local('Swiza'), local('Switzer'), url('https://cdn.fontshare.com/wf/5W5N7R3J33N2K4V32Y53M5C3O6B7Z3P2/7V6C5X4Z3Y2W1V0U9T8S7R6Q5P4O3N2M/switzer-variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --font-swiza: 'Swiza', 'Switzer', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+    --font-display: var(--font-swiza);
+    --font-serif: var(--font-swiza);
+    --font-mono: var(--font-swiza);
+    --font-sans: var(--font-swiza);
+  }
+
+  body,
+  button,
+  input,
+  table {
+    font-family: var(--font-swiza);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .font-display {
+    font-family: var(--font-swiza);
+  }
+
+  .font-editorial-serif {
+    font-family: var(--font-swiza);
+  }
+
+  .font-mono-tabular {
+    font-family: var(--font-swiza);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
