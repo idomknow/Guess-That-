@@ -11,9 +11,19 @@ import {
   ALL_1000_MOVIES,
   ALL_1000_CELEBRITIES,
 } from './thousandCatalogue';
+import {
+  ALL_10000_PLAYABLE_SONGS,
+  ALL_10000_SONGS,
+} from './tenThousandSongs';
 
-export { ALL_1000_SONGS, ALL_1000_MOVIES, ALL_1000_CELEBRITIES };
-export const EXTRA_SONG_CATALOGUE_TITLES = ALL_1000_SONGS;
+export {
+  ALL_1000_SONGS,
+  ALL_1000_MOVIES,
+  ALL_1000_CELEBRITIES,
+  ALL_10000_PLAYABLE_SONGS,
+  ALL_10000_SONGS,
+};
+export const EXTRA_SONG_CATALOGUE_TITLES = ALL_10000_SONGS;
 
 export type CategoryType = 'songs' | 'movies' | 'celebrities';
 

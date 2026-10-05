@@ -613,6 +613,78 @@ const spotifyCallbackHandler = async (req: express.Request, res: express.Respons
 app.get(['/auth/callback', '/auth/callback/'], spotifyCallbackHandler);
 
 // 2. Music Preview Catalog & Live Search API
+const singleTrackEnrichCache = new Map<
+  string,
+  {
+    previewUrl: string | null;
+    albumArtUrl: string | null;
+    spotifyUrl: string | null;
+    album?: string;
+    releaseYear?: number;
+  }
+>();
+
+app.get('/api/music/enrich-single', async (req, res) => {
+  const title = typeof req.query.title === 'string' ? req.query.title.trim() : '';
+  const artist = typeof req.query.artist === 'string' ? req.query.artist.trim() : '';
+  if (!title) {
+    return res.status(400).json({ error: 'title is required' });
+  }
+
+  const cacheKey = `${title.toLowerCase()}::${artist.toLowerCase()}`;
+  const cached = singleTrackEnrichCache.get(cacheKey);
+  if (cached) {
+    return res.json(cached);
+  }
+
+  try {
+    const searchTerm = encodeURIComponent(`${title} ${artist}`.trim());
+    const response = await fetch(
+      `https://itunes.apple.com/search?term=${searchTerm}&entity=song&limit=3`
+    );
+    if (response.ok) {
+      const data = (await response.json()) as {
+        results?: Array<{
+          trackName?: string;
+          artistName?: string;
+          collectionName?: string;
+          releaseDate?: string;
+          previewUrl?: string;
+          artworkUrl100?: string;
+          trackViewUrl?: string;
+        }>;
+      };
+      const match =
+        data.results?.find((r) => Boolean(r.previewUrl)) || data.results?.[0];
+      if (match) {
+        const result = {
+          previewUrl: match.previewUrl || null,
+          albumArtUrl: match.artworkUrl100
+            ? match.artworkUrl100.replace('100x100bb', '600x600bb')
+            : null,
+          spotifyUrl: match.trackViewUrl || null,
+          album: match.collectionName || undefined,
+          releaseYear: match.releaseDate
+            ? new Date(match.releaseDate).getFullYear()
+            : undefined,
+        };
+        singleTrackEnrichCache.set(cacheKey, result);
+        return res.json(result);
+      }
+    }
+  } catch {
+    // fallback if network request fails
+  }
+
+  const emptyResult = {
+    previewUrl: null,
+    albumArtUrl: null,
+    spotifyUrl: null,
+  };
+  singleTrackEnrichCache.set(cacheKey, emptyResult);
+  return res.json(emptyResult);
+});
+
 app.get('/api/music/tracks', async (_req, res) => {
   if (!cachedSeedTracks) {
     cachedSeedTracks = await Promise.all(SEED_TRACK_QUERIES.map((seed) => enrichTrackWithPreview(seed)));

@@ -29,6 +29,8 @@ import {
   ALL_1000_SONGS,
   ALL_1000_MOVIES,
   ALL_1000_CELEBRITIES,
+  ALL_10000_PLAYABLE_SONGS,
+  ALL_10000_SONGS,
   MOVIE_CHALLENGES,
   CELEBRITY_CHALLENGES,
   BADGE_CATALOG,
@@ -562,9 +564,87 @@ export default function App() {
     };
   };
 
+  const [liveSongEnrichMap, setLiveSongEnrichMap] = useState<
+    Record<
+      string,
+      {
+        previewUrl: string | null;
+        albumArtUrl: string | null;
+        spotifyUrl: string | null;
+        fetched: boolean;
+      }
+    >
+  >({});
+
+  // Random session seed so the 10,000-song deck is shuffled on every load
+  const [songShuffleSeed] = useState<number>(() => Math.floor(Math.random() * 1000000) + 1);
+  const [playedIndicesByCategory, setPlayedIndicesByCategory] = useState<
+    Record<CategoryType, number[]>
+  >({
+    songs: [0],
+    movies: [0],
+    celebrities: [0],
+  });
+  const [nextShuffledIndexMap, setNextShuffledIndexMap] = useState<Record<CategoryType, number>>({
+    songs: Math.floor(Math.random() * 9999) + 1,
+    movies: 1,
+    celebrities: 1,
+  });
+
+  const allTenThousandPlayableSongs = useMemo(() => {
+    const seen = new Set<string>();
+    const combined: ChallengeItem[] = [];
+
+    songChallenges.forEach((s) => {
+      const key = s.answer.toLowerCase().trim();
+      seen.add(key);
+      combined.push(s);
+    });
+
+    ALL_10000_PLAYABLE_SONGS.forEach((item) => {
+      if (combined.length >= 10000) return;
+      const key = item.answer.toLowerCase().trim();
+      if (!seen.has(key)) {
+        seen.add(key);
+        combined.push(item);
+      }
+    });
+
+    if (combined.length < 10000) {
+      const seenIds = new Set(combined.map((c) => c.id));
+      for (let i = 0; i < ALL_10000_PLAYABLE_SONGS.length && combined.length < 10000; i++) {
+        const item = ALL_10000_PLAYABLE_SONGS[i];
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          combined.push(item);
+        }
+      }
+    }
+
+    const deck = combined.slice(0, 10000);
+    // Keep index 0 as a recognizable opening track, and Fisher-Yates shuffle indices 1..9999
+    let seed = songShuffleSeed;
+    const nextRand = () => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = 1 + Math.floor(nextRand() * i);
+      const temp = deck[i];
+      deck[i] = deck[j];
+      deck[j] = temp;
+    }
+
+    return deck.map((item, idx) => ({
+      ...item,
+      catalogNumber: `No. ${String(idx + 1).padStart(5, '0')}`,
+    }));
+  }, [songChallenges, songShuffleSeed]);
+
   const activeChallengeList = useMemo(() => {
     if (category === 'songs') {
-      return songChallenges.map((s) => applyRectificationToChallenge(s));
+      return allTenThousandPlayableSongs;
     }
     if (category === 'movies') {
       return MOVIE_CHALLENGES.map((m) =>
@@ -583,10 +663,99 @@ export default function App() {
             : topicArtworkMap[c.id] || c.artworkUrl,
       })
     );
-  }, [category, songChallenges, topicArtworkMap, rectificationsMap]);
+  }, [category, allTenThousandPlayableSongs, topicArtworkMap, rectificationsMap]);
 
   const currentChallengeIndex = challengeIndexMap[category] % activeChallengeList.length;
-  const currentChallenge: ChallengeItem = activeChallengeList[currentChallengeIndex];
+  const rawCurrentChallenge: ChallengeItem = activeChallengeList[currentChallengeIndex];
+
+  const currentChallenge: ChallengeItem = useMemo(() => {
+    if (category !== 'songs') {
+      return rawCurrentChallenge;
+    }
+    const enriched = liveSongEnrichMap[rawCurrentChallenge.id];
+    const keepGivenCover =
+      rawCurrentChallenge.id === 'song-wusyaname' ||
+      rawCurrentChallenge.id === 'song-less-i-know';
+    const merged: ChallengeItem = enriched
+      ? {
+          ...rawCurrentChallenge,
+          previewUrl: rawCurrentChallenge.previewUrl || enriched.previewUrl,
+          artworkUrl: keepGivenCover
+            ? rawCurrentChallenge.artworkUrl
+            : enriched.albumArtUrl || rawCurrentChallenge.artworkUrl,
+          spotifyUrl: rawCurrentChallenge.spotifyUrl || enriched.spotifyUrl,
+        }
+      : rawCurrentChallenge;
+    return applyRectificationToChallenge(merged);
+  }, [category, rawCurrentChallenge, liveSongEnrichMap, rectificationsMap]);
+
+  const pickRandomUnplayedIndex = (
+    cat: CategoryType,
+    list: ChallengeItem[],
+    currentIndex: number,
+    playedList: number[]
+  ): number => {
+    const total = list.length;
+    if (total <= 1) return 0;
+    const currentArtist = list[currentIndex]?.subtitle.split(' — ')[0]?.toLowerCase() || '';
+    const playedSet = new Set(playedList.length >= total ? [currentIndex] : playedList);
+
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const candidate = Math.floor(Math.random() * total);
+      if (candidate !== currentIndex && !playedSet.has(candidate)) {
+        const candidateArtist = list[candidate]?.subtitle.split(' — ')[0]?.toLowerCase() || '';
+        if (cat !== 'songs' || candidateArtist !== currentArtist || attempt > 25) {
+          return candidate;
+        }
+      }
+    }
+    const fallback = (currentIndex + 1 + Math.floor(Math.random() * (total - 1))) % total;
+    return fallback;
+  };
+
+  // Automatically enrich the active song and the next pre-shuffled song from the 10,000-track catalogue
+  useEffect(() => {
+    if (category !== 'songs') return;
+
+    const nextIdx = nextShuffledIndexMap.songs % activeChallengeList.length;
+    const candidates = [
+      activeChallengeList[currentChallengeIndex],
+      activeChallengeList[nextIdx],
+    ].filter(Boolean);
+
+    candidates.forEach((song) => {
+      if (song.previewUrl || liveSongEnrichMap[song.id]?.fetched) return;
+
+      const baseTitle = song.answer.replace(/\s*\([^)]*\)$/, '').trim();
+      const artistPart =
+        song.hints.pinpoint ||
+        song.subtitle.split(' — ')[0]?.replace(/\s*\(Easy\)$/i, '').trim() ||
+        '';
+
+      fetch(
+        `/api/music/enrich-single?title=${encodeURIComponent(
+          baseTitle
+        )}&artist=${encodeURIComponent(artistPart)}`
+      )
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data) {
+            setLiveSongEnrichMap((prev) => ({
+              ...prev,
+              [song.id]: {
+                previewUrl: data.previewUrl || null,
+                albumArtUrl: data.albumArtUrl || null,
+                spotifyUrl: data.spotifyUrl || null,
+                fetched: true,
+              },
+            }));
+          }
+        })
+        .catch(() => {
+          // ignore network errors; synth fallback remains active
+        });
+    });
+  }, [category, currentChallengeIndex, nextShuffledIndexMap.songs, activeChallengeList]);
 
   const catalogueDropdownOptions = useMemo(() => {
     if (category === 'songs') {
@@ -609,13 +778,13 @@ export default function App() {
         }
       });
 
-      ALL_1000_SONGS.forEach((entry) => {
-        if (list.length >= 1000) return;
+      ALL_10000_SONGS.forEach((entry) => {
+        if (list.length >= 10000) return;
         const normKey = entry.toLowerCase();
         if (!seenLabels.has(normKey)) {
           seenLabels.add(normKey);
           const [titlePart, artistPart] = entry.split(' — ');
-          const cleanTitle = (titlePart || entry).replace(/\s*\(.*\)$/, '').trim();
+          const cleanTitle = (titlePart || entry).trim();
           const cleanArtist = (artistPart || 'Various Artists').trim();
           list.push({
             key: entry,
@@ -626,7 +795,7 @@ export default function App() {
         }
       });
 
-      return list.slice(0, 1000).sort((a, b) => a.label.localeCompare(b.label));
+      return list.slice(0, 10000).sort((a, b) => a.label.localeCompare(b.label));
     }
 
     if (category === 'movies') {
@@ -898,7 +1067,7 @@ export default function App() {
     setActiveSection('play');
     const targetList =
       tile.category === 'songs'
-        ? songChallenges
+        ? allTenThousandPlayableSongs
         : tile.category === 'movies'
         ? MOVIE_CHALLENGES
         : CELEBRITY_CHALLENGES;
@@ -912,33 +1081,110 @@ export default function App() {
     resetRoundState();
   };
 
-  const handleNextChallenge = () => {
+  const advanceToShuffledChallenge = () => {
+    const targetIndex =
+      nextShuffledIndexMap[category] !== undefined &&
+      nextShuffledIndexMap[category] !== currentChallengeIndex
+        ? nextShuffledIndexMap[category] % activeChallengeList.length
+        : pickRandomUnplayedIndex(
+            category,
+            activeChallengeList,
+            currentChallengeIndex,
+            playedIndicesByCategory[category]
+          );
+
+    const updatedPlayed = [...playedIndicesByCategory[category], targetIndex].slice(-500);
+    const upcomingIndex = pickRandomUnplayedIndex(
+      category,
+      activeChallengeList,
+      targetIndex,
+      updatedPlayed
+    );
+
+    setPlayedIndicesByCategory((prev) => ({
+      ...prev,
+      [category]: updatedPlayed,
+    }));
     setChallengeIndexMap((prev) => ({
       ...prev,
-      [category]: (prev[category] + 1) % activeChallengeList.length,
+      [category]: targetIndex,
+    }));
+    setNextShuffledIndexMap((prev) => ({
+      ...prev,
+      [category]: upcomingIndex,
     }));
     resetRoundState();
   };
 
-  const handleToggleAudioSnippet = () => {
+  const handleNextChallenge = () => {
+    advanceToShuffledChallenge();
+  };
+
+  const handleShuffleChallenge = () => {
+    advanceToShuffledChallenge();
+  };
+
+  const resolvePreviewBeforePlay = async (): Promise<string | null | undefined> => {
+    if (category !== 'songs') return currentChallenge.previewUrl;
+    if (currentChallenge.previewUrl) return currentChallenge.previewUrl;
+    const cached = liveSongEnrichMap[currentChallenge.id];
+    if (cached?.fetched) return cached.previewUrl;
+
+    try {
+      const baseTitle = currentChallenge.answer.replace(/\s*\([^)]*\)$/, '').trim();
+      const artistPart =
+        currentChallenge.hints.pinpoint ||
+        currentChallenge.subtitle.split(' — ')[0]?.replace(/\s*\(Easy\)$/i, '').trim() ||
+        '';
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 900);
+      const res = await fetch(
+        `/api/music/enrich-single?title=${encodeURIComponent(
+          baseTitle
+        )}&artist=${encodeURIComponent(artistPart)}`,
+        { signal: controller.signal }
+      );
+      window.clearTimeout(timer);
+      if (res.ok) {
+        const data = await res.json();
+        setLiveSongEnrichMap((prev) => ({
+          ...prev,
+          [currentChallenge.id]: {
+            previewUrl: data.previewUrl || null,
+            albumArtUrl: data.albumArtUrl || null,
+            spotifyUrl: data.spotifyUrl || null,
+            fetched: true,
+          },
+        }));
+        return data.previewUrl || null;
+      }
+    } catch {
+      // fallback to synth if offline or timed out
+    }
+    return currentChallenge.previewUrl;
+  };
+
+  const handleToggleAudioSnippet = async () => {
     if (isPlayingAudio) {
       soundEngine.stopAll();
       return;
     }
     const durationSeconds = SNIPPET_DURATIONS[snippetStep] || 4;
+    const resolvedPreview = await resolvePreviewBeforePlay();
     soundEngine.playTrackSnippet({
-      previewUrl: currentChallenge.previewUrl,
+      previewUrl: resolvedPreview,
       durationSeconds,
       synthNotes: currentChallenge.synthNotes,
       bpm: currentChallenge.bpm,
     });
   };
 
-  const handleExtendSnippet = () => {
+  const handleExtendSnippet = async () => {
     const nextStep = Math.min(SNIPPET_DURATIONS.length - 1, snippetStep + 1);
     setSnippetStep(nextStep);
+    const resolvedPreview = await resolvePreviewBeforePlay();
     soundEngine.playTrackSnippet({
-      previewUrl: currentChallenge.previewUrl,
+      previewUrl: resolvedPreview,
       durationSeconds: SNIPPET_DURATIONS[nextStep],
       synthNotes: currentChallenge.synthNotes,
       bpm: currentChallenge.bpm,
@@ -1524,9 +1770,14 @@ export default function App() {
                 <div className="font-mono-tabular text-[11px] opacity-65">
                   <span>{currentChallenge.catalogNumber}</span>
                   <span aria-hidden="true"> · </span>
-                  <span>
-                    {currentChallengeIndex + 1} of {activeChallengeList.length}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={handleShuffleChallenge}
+                    className="underline hover:opacity-100"
+                    title={`Shuffle across all ${activeChallengeList.length.toLocaleString()} playable rounds`}
+                  >
+                    Shuffle ↻
+                  </button>
                   {rectificationsMap[currentChallenge.id] && (
                     <>
                       <span aria-hidden="true"> · </span>
@@ -1537,20 +1788,6 @@ export default function App() {
                       </span>
                     </>
                   )}
-                  <span aria-hidden="true"> · </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (showRectifyPanel) {
-                        setShowRectifyPanel(false);
-                      } else {
-                        openRectifyPanelForCurrent();
-                      }
-                    }}
-                    className="underline hover:opacity-100"
-                  >
-                    {showRectifyPanel ? 'Close rectify' : 'Flag / Rectify'}
-                  </button>
                   {category === 'songs' && (
                     <>
                       <span aria-hidden="true"> · </span>
@@ -1836,8 +2073,8 @@ export default function App() {
                         htmlFor="catalogue-select"
                         className="font-mono-tabular opacity-60 whitespace-nowrap"
                       >
-                        Catalogue ({filteredCatalogueDropdownOptions.length}/
-                        {catalogueDropdownOptions.length}):
+                        Catalogue ({filteredCatalogueDropdownOptions.length.toLocaleString()}/
+                        {catalogueDropdownOptions.length.toLocaleString()}):
                       </label>
                       <select
                         id="catalogue-select"
@@ -1862,17 +2099,17 @@ export default function App() {
                         <option value="">
                           {category === 'songs'
                             ? selectedArtistFilter
-                              ? `Select from ${filteredCatalogueDropdownOptions.length} songs by ${selectedArtistFilter}...`
+                              ? `Select from ${filteredCatalogueDropdownOptions.length.toLocaleString()} songs by ${selectedArtistFilter}...`
                               : dropdownSearchQuery
-                              ? `Select from ${filteredCatalogueDropdownOptions.length} matching songs...`
-                              : `Select from all ${catalogueDropdownOptions.length} songs in catalogue...`
+                              ? `Select from ${filteredCatalogueDropdownOptions.length.toLocaleString()} matching songs...`
+                              : `Select from all ${catalogueDropdownOptions.length.toLocaleString()} songs in catalogue...`
                             : category === 'movies'
                             ? dropdownSearchQuery
-                              ? `Select from ${filteredCatalogueDropdownOptions.length} matching movies...`
-                              : `Select from all ${catalogueDropdownOptions.length} movies in catalogue...`
+                              ? `Select from ${filteredCatalogueDropdownOptions.length.toLocaleString()} matching movies...`
+                              : `Select from all ${catalogueDropdownOptions.length.toLocaleString()} movies in catalogue...`
                             : dropdownSearchQuery
-                            ? `Select from ${filteredCatalogueDropdownOptions.length} matching celebrities...`
-                            : `Select from all ${catalogueDropdownOptions.length} celebrities in catalogue...`}
+                            ? `Select from ${filteredCatalogueDropdownOptions.length.toLocaleString()} matching celebrities...`
+                            : `Select from all ${catalogueDropdownOptions.length.toLocaleString()} celebrities in catalogue...`}
                         </option>
                         {filteredCatalogueDropdownOptions.map((opt) => (
                           <option key={opt.key} value={opt.key}>
@@ -1908,6 +2145,13 @@ export default function App() {
                     <div className="flex items-center gap-4">
                       <button onClick={handleGiveUpRound} className="underline hover:opacity-100">
                         Reveal answer
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleShuffleChallenge}
+                        className="underline hover:opacity-100"
+                      >
+                        Shuffle ({activeChallengeList.length.toLocaleString()}) ↻
                       </button>
                       <button
                         type="button"
@@ -1964,6 +2208,13 @@ export default function App() {
                           Spotify ↗
                         </a>
                       )}
+                      <button
+                        type="button"
+                        onClick={handleShuffleChallenge}
+                        className="px-3 py-2 border border-current/40 hover:border-current"
+                      >
+                        Shuffle ↻
+                      </button>
                       <button
                         onClick={handleNextChallenge}
                         className={`px-4 py-2 font-semibold border border-current ${
